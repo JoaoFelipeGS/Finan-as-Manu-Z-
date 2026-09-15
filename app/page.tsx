@@ -6,7 +6,7 @@ import { Entry, FinancialSummary, Goal, Pessoa, TipoDespesa, TipoLancamento } fr
 const CATEGORIAS = [
   "Moradia", "Alimentação", "Transporte", "Saúde", "Educação",
   "Lazer", "Contas/Assinaturas", "Vestuário", "Cuidados Pessoais",
-  "Presentes", "Pets", "Outros",
+  "Presentes", "Pets", "Investimentos", "Outros",
 ];
 const MESES_PT = [
   "janeiro", "fevereiro", "março", "abril", "maio", "junho",

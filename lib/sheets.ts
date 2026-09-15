@@ -84,7 +84,7 @@ function personFromSheet(value: unknown): Entry["pessoa"] {
 }
 
 function personToSheet(value: Entry["pessoa"]): string {
-  return value === "João" ? "Pessoa 1" : "Pessoa 2";
+  return value;
 }
 
 function monthTabFromDate(date: string): string {
