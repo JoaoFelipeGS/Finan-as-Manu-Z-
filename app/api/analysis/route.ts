@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { FinancialSummary } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
 
 function isSummary(value: unknown): value is FinancialSummary {
   if (!value || typeof value !== "object") return false;
@@ -33,29 +34,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Resumo financeiro inválido." }, { status: 400 });
     }
 
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
-        temperature: 0.2,
-        max_tokens: 500,
-        messages: [
-          {
-            role: "system",
-            content: "Você é um orientador financeiro prudente. Analise somente os números fornecidos, não invente fatos, não recomende investimentos específicos ou arriscados e deixe claro que é uma estimativa. Responda em português do Brasil com 3 a 5 recomendações práticas, incluindo quanto reduzir em despesas e quanto reservar para investir, sempre em reais e sem prometer retorno.",
-          },
-          {
-            role: "user",
-            content: `Analise este resumo mensal do casal e dê dicas objetivas:\n${JSON.stringify(body.summary)}`,
-          },
-        ],
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
+    const models = [process.env.GROQ_MODEL?.trim(), DEFAULT_GROQ_MODEL].filter(
+      (model, index, list): model is string => Boolean(model) && list.indexOf(model) === index,
+    );
+    let response: Response | null = null;
+    for (const model of models) {
+      response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_tokens: 500,
+          messages: [
+            {
+              role: "system",
+              content: "Você é um orientador financeiro prudente. Analise somente os números fornecidos, não invente fatos, não recomende investimentos específicos ou arriscados e deixe claro que é uma estimativa. Responda em português do Brasil com 3 a 5 recomendações práticas, incluindo quanto reduzir em despesas e quanto reservar para investir, sempre em reais e sem prometer retorno.",
+            },
+            {
+              role: "user",
+              content: `Analise este resumo mensal do casal e dê dicas objetivas:\n${JSON.stringify(body.summary)}`,
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.status !== 404) break;
+      console.warn("Groq model unavailable, trying fallback", model);
+    }
 
-    if (!response.ok) {
-      console.error("Groq API error", response.status);
+    if (!response || !response.ok) {
+      console.error("Groq API error", response?.status);
       return NextResponse.json({ error: "Não foi possível gerar a análise agora." }, { status: 502 });
     }
 

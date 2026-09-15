@@ -102,7 +102,7 @@ usando o IP do computador).
    - `GOOGLE_PRIVATE_KEY` (cole o valor entre aspas, mantendo os `\n`
      literais — a Vercel aceita colar o valor multi-linha direto também)
    - `GROQ_API_KEY` (opcional, para a aba Dados gerar dicas com a Groq)
-   - `GROQ_MODEL` (opcional; padrão `llama-3.1-8b-instant`)
+   - `GROQ_MODEL` (opcional; padrão `llama-3.3-70b-versatile`; se um modelo configurado responder 404, o app tenta esse fallback)
 4. Clique em **Deploy**. Em ~1 minuto vocês têm uma URL tipo
    `https://nosso-dinheiro.vercel.app`.
 
