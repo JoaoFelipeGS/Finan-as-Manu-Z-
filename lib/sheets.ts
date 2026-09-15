@@ -107,13 +107,19 @@ function metadataId(tab: string, row: number, value: unknown): string {
 async function getMonthlyEntries(): Promise<Entry[]> {
   const entries: Entry[] = [];
   for (const tab of MONTH_TABS) {
-    const rows = await readRange(`${tab}!A1:K45`);
-    for (let index = 4; index <= 15; index++) {
+    const rows = await readRange(`${tab}!A1:K100`);
+    const revenueTotal = rows.findIndex((row, index) => index >= 4 && String(row[0] || "").trim().toUpperCase() === "TOTAL RECEITAS");
+    const expenseHeader = rows.findIndex((row) => String(row[0] || "").trim().toUpperCase() === "DESPESAS");
+    const expenseTotal = rows.findIndex((row, index) => index > expenseHeader && String(row[0] || "").trim().toUpperCase() === "TOTAL DESPESAS");
+    const revenueEnd = revenueTotal === -1 ? 16 : revenueTotal;
+    const expenseStart = expenseHeader === -1 ? 20 : expenseHeader + 2;
+    const expenseEnd = expenseTotal === -1 ? 44 : expenseTotal;
+    for (let index = 4; index < revenueEnd; index++) {
       const row = rows[index] || [];
       if (!row[0] || String(row[10] || "").toUpperCase() === "TRUE") continue;
       entries.push({ id: metadataId(tab, index + 1, row[9]), data: normalizeSheetDate(row[2]), tipo: "receita", descricao: String(row[0]), categoria: null, pessoa: personFromSheet(row[1]), despesaTipo: null, percJoao: null, valor: parseMoney(row[3]) });
     }
-    for (let index = 20; index <= 43; index++) {
+    for (let index = expenseStart; index < expenseEnd; index++) {
       const row = rows[index] || [];
       if (!row[0] || String(row[10] || "").toUpperCase() === "TRUE") continue;
       entries.push({ id: metadataId(tab, index + 1, row[9]), data: normalizeSheetDate(row[2]), tipo: "despesa", descricao: String(row[0]), categoria: row[1] ? String(row[1]) : null, pessoa: personFromSheet(row[4]), despesaTipo: (row[5] as Entry["despesaTipo"]) || null, percJoao: parsePercent(row[6]), valor: parseMoney(row[3]) });
@@ -138,7 +144,7 @@ async function updateRange(range: string, values: (string | number)[][]): Promis
 }
 
 async function findMonthlyRow(tab: string, start: number, end: number): Promise<number | null> {
-  const rows = await readRange(`${tab}!A${start}:A${end}`);
+  const rows = await readRange(`${tab}!A${start}:K${end}`);
   if (rows.length === 0) return start;
   const row = rows.findIndex((values) => !String(values[0] || "").trim());
   return row === -1 ? null : start + row;
@@ -167,9 +173,9 @@ async function getSheetId(title: string): Promise<number> {
 }
 
 async function syncMonthlyCalculations(tab: string): Promise<void> {
-  const markerRows = await readRange(`${tab}!A19:A100`);
+  const markerRows = await readRange(`${tab}!A1:A100`);
   const totalIndex = markerRows.findIndex((row) => String(row[0] || "").trim().toUpperCase() === "TOTAL DESPESAS");
-  const totalRow = totalIndex === -1 ? 45 : totalIndex + 19;
+  const totalRow = totalIndex === -1 ? 45 : totalIndex + 1;
   const endRow = totalRow - 1;
   const expenseRows = await readRange(`${tab}!A21:G${endRow}`);
   for (let index = 0; index < expenseRows.length; index++) {
@@ -177,11 +183,15 @@ async function syncMonthlyCalculations(tab: string): Promise<void> {
     const row = index + 21;
     await updateRange(`${tab}!H${row}:I${row}`, [[`=D${row}*G${row}`, `=D${row}*(1-G${row})`]]);
   }
-  await updateRange(`${tab}!B55:C55`, [[
+  const paidIndex = markerRows.findIndex((row, index) => index > totalIndex && String(row[0] || "").trim().toUpperCase() === "PAGOU");
+  const situationIndex = markerRows.findIndex((row, index) => index > totalIndex && String(row[0] || "").trim().toUpperCase() === "SITUAÇÃO");
+  const paidRow = paidIndex === -1 ? totalRow + 9 : paidIndex + 1;
+  const situationRow = situationIndex === -1 ? paidRow + 3 : situationIndex + 2;
+  await updateRange(`${tab}!B${paidRow}:C${paidRow}`, [[
     `=SUMIF(E21:E${endRow};"João";D21:D${endRow})`,
     `=SUMIF(E21:E${endRow};"Manuela";D21:D${endRow})`,
   ]]);
-  await updateRange(`${tab}!B59`, [[`=IF(B57>0;"Manuela deve "&TEXT(B57;"R$ #,##0.00")&" a João";IF(B57<0;"João deve "&TEXT(-B57;"R$ #,##0.00")&" a Manuela";"Contas quitadas entre vocês"))`]]);
+  await updateRange(`${tab}!B${situationRow}`, [[`=IF(B${paidRow + 2}>0;"Manuela deve "&TEXT(B${paidRow + 2};"R$ #,##0.00")&" a João";IF(B${paidRow + 2}<0;"João deve "&TEXT(-B${paidRow + 2};"R$ #,##0.00")&" a Manuela";"Contas quitadas entre vocês"))`]]);
 }
 
 export async function addEntry(entry: Entry): Promise<void> {
