@@ -124,9 +124,11 @@ async function updateRange(range: string, values: (string | number)[][]): Promis
   await getClient().spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID, range, valueInputOption: "USER_ENTERED", requestBody: { values } });
 }
 
-async function findMonthlyRow(tab: string, start: number, end: number, columns: number): Promise<number | null> {
+async function findMonthlyRow(tab: string, start: number, end: number): Promise<number | null> {
   const rows = await readRange(`${tab}!A${start}:K${end}`);
-  const row = rows.findIndex((values) => values.slice(0, columns).every((value) => !String(value || "").trim()));
+  // A descricao e o unico campo que marca uma linha como usada; as colunas
+  // restantes podem conter formulas, defaults ou validacoes do template.
+  const row = rows.findIndex((values) => !String(values[0] || "").trim());
   return row === -1 ? null : start + row;
 }
 
@@ -138,12 +140,12 @@ export async function addEntry(entry: Entry): Promise<void> {
   }
   const tab = monthTabFromDate(entry.data);
   if (entry.tipo === "receita") {
-    const row = await findMonthlyRow(tab, 5, 16, 4);
+    const row = await findMonthlyRow(tab, 5, 16);
     if (!row) throw new Error("A aba mensal está sem linhas livres para receitas.");
     await updateRange(`${tab}!A${row}:D${row}`, [[entry.descricao, entry.pessoa, entry.data, entry.valor]]);
     await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
   } else {
-    const row = await findMonthlyRow(tab, 21, 44, 6);
+    const row = await findMonthlyRow(tab, 21, 44);
     if (!row) throw new Error("A aba mensal está sem linhas livres para despesas.");
     await updateRange(`${tab}!A${row}:G${row}`, [[entry.descricao, entry.categoria ?? "Outros", entry.data, entry.valor, entry.pessoa, entry.despesaTipo ?? "Individual", entry.percJoao ?? 0.5]]);
     await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
