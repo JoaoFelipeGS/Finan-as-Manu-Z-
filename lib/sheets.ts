@@ -125,11 +125,31 @@ async function updateRange(range: string, values: (string | number)[][]): Promis
 }
 
 async function findMonthlyRow(tab: string, start: number, end: number): Promise<number | null> {
-  const rows = await readRange(`${tab}!A${start}:K${end}`);
-  // A descricao e o unico campo que marca uma linha como usada; as colunas
-  // restantes podem conter formulas, defaults ou validacoes do template.
+  const rows = await readRange(`${tab}!A${start}:A${end}`);
   const row = rows.findIndex((values) => !String(values[0] || "").trim());
   return row === -1 ? null : start + row;
+}
+
+async function insertMonthlyRow(tab: string, beforeRow: number): Promise<number> {
+  await getClient().spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [{
+        insertDimension: {
+          range: { sheetId: await getSheetId(tab), dimension: "ROWS", startIndex: beforeRow - 1, endIndex: beforeRow },
+          inheritFromBefore: true,
+        },
+      }],
+    },
+  });
+  return beforeRow;
+}
+
+async function getSheetId(title: string): Promise<number> {
+  const spreadsheet = await getClient().spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties" });
+  const sheet = spreadsheet.data.sheets?.find((item) => item.properties?.title === title);
+  if (!sheet?.properties?.sheetId && sheet?.properties?.sheetId !== 0) throw new Error(`Aba mensal não encontrada: ${title}`);
+  return sheet.properties.sheetId;
 }
 
 export async function addEntry(entry: Entry): Promise<void> {
@@ -140,13 +160,11 @@ export async function addEntry(entry: Entry): Promise<void> {
   }
   const tab = monthTabFromDate(entry.data);
   if (entry.tipo === "receita") {
-    const row = await findMonthlyRow(tab, 5, 16);
-    if (!row) throw new Error("A aba mensal está sem linhas livres para receitas.");
+    const row = await findMonthlyRow(tab, 5, 16) || await insertMonthlyRow(tab, 17);
     await updateRange(`${tab}!A${row}:D${row}`, [[entry.descricao, entry.pessoa, entry.data, entry.valor]]);
     await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
   } else {
-    const row = await findMonthlyRow(tab, 21, 44);
-    if (!row) throw new Error("A aba mensal está sem linhas livres para despesas.");
+    const row = await findMonthlyRow(tab, 21, 44) || await insertMonthlyRow(tab, 45);
     await updateRange(`${tab}!A${row}:G${row}`, [[entry.descricao, entry.categoria ?? "Outros", entry.data, entry.valor, entry.pessoa, entry.despesaTipo ?? "Individual", entry.percJoao ?? 0.5]]);
     await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
   }
