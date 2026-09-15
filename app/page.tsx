@@ -45,6 +45,11 @@ export default function Page() {
   const [perc, setPerc] = useState(50);
   const [data, setData] = useState(todayISO());
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   useEffect(() => {
     refreshAll();
   }, []);
@@ -257,6 +262,11 @@ export default function Page() {
   return (
     <div id="app">
       <div className="top-actions">
+        <button className="icon-btn logout-btn" title="Sair" onClick={handleLogout} aria-label="Sair">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10 17l5-5-5-5M15 12H3" /><path d="M21 3v18" />
+          </svg>
+        </button>
         <button className="icon-btn" title="Exportar CSV" onClick={handleExportCsv}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />

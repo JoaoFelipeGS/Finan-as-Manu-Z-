@@ -139,6 +139,25 @@ da planilha são preservadas. A aba `Resumo Anual` continua sendo calculada
 pelas fórmulas do modelo. A aba `Lancamentos`, se existir de uma configuração
 anterior, é mantida como arquivo histórico e não recebe novos lançamentos.
 
+## 7. Login e segurança
+
+O app exige login antes de carregar qualquer tela ou API. A senha nunca é
+armazenada: gere um hash scrypt localmente:
+
+```bash
+node scripts/hash-password.mjs "sua senha forte"
+```
+
+Na Vercel, configure também `AUTH_USERNAME`, `AUTH_PASSWORD_HASH` (saída do
+comando) e `AUTH_SECRET` (segredo aleatório com pelo menos 32 caracteres).
+
+O cookie da sessão é `HttpOnly`, `Secure` em produção, `SameSite=Lax` e assinado
+com HMAC. Sem "Lembrar de mim", a sessão dura 8 horas; marcada, dura 30 dias.
+O login permite até 5 tentativas por IP a cada 15 minutos. Em funções
+serverless, esse rate limit é best-effort por instância; para proteção
+distribuída entre regiões, conecte um armazenamento compartilhado como Vercel
+KV.
+
 ## Estrutura do projeto
 
 ```
@@ -157,6 +176,7 @@ nosso-dinheiro/
 │   ├── manifest.json
 │   ├── icon-192.png
 │   └── icon-512.png
+├── scripts/hash-password.mjs
 ├── .env.example
 └── package.json
 ```
@@ -165,7 +185,5 @@ nosso-dinheiro/
 
 - A Google Sheets API tem limite gratuito de 300 requisições por minuto por
   projeto — muito acima do que dois usuários no dia a dia vão usar.
-- Não há autenticação de login no app: qualquer pessoa com a URL da Vercel
-  consegue abrir e lançar dados. Para uso privado do casal, isso costuma ser
-  aceitável (a URL não é divulgada), mas se quiser adicionar uma senha simples
-  depois, dá para fazer com poucas linhas a mais.
+- O login protege as telas e APIs. Mantenha `AUTH_SECRET` e o hash somente nas
+   variáveis da Vercel; nunca os coloque no GitHub.
