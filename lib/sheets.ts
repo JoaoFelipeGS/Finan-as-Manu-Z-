@@ -144,10 +144,12 @@ async function updateRange(range: string, values: (string | number)[][]): Promis
 }
 
 async function findMonthlyRow(tab: string, start: number, end: number): Promise<number | null> {
-  const rows = await readRange(`${tab}!A${start}:K${end}`);
+  const rows = await readRange(`${tab}!A${start}:A${end}`);
+  const capacity = end - start + 1;
   if (rows.length === 0) return start;
   const row = rows.findIndex((values) => !String(values[0] || "").trim());
-  return row === -1 ? null : start + row;
+  if (row !== -1) return start + row;
+  return rows.length < capacity ? start + rows.length : null;
 }
 
 async function insertMonthlyRow(tab: string, beforeRow: number): Promise<number> {
@@ -174,7 +176,9 @@ async function getSheetId(title: string): Promise<number> {
 
 async function syncMonthlyCalculations(tab: string): Promise<void> {
   const markerRows = await readRange(`${tab}!A1:A100`);
+  const revenueIndex = markerRows.findIndex((row, index) => index >= 4 && String(row[0] || "").trim().toUpperCase() === "TOTAL RECEITAS");
   const totalIndex = markerRows.findIndex((row) => String(row[0] || "").trim().toUpperCase() === "TOTAL DESPESAS");
+  const revenueTotalRow = revenueIndex === -1 ? 17 : revenueIndex + 1;
   const totalRow = totalIndex === -1 ? 45 : totalIndex + 1;
   const endRow = totalRow - 1;
   const expenseRows = await readRange(`${tab}!A21:G${endRow}`);
@@ -183,6 +187,9 @@ async function syncMonthlyCalculations(tab: string): Promise<void> {
     const row = index + 21;
     await updateRange(`${tab}!H${row}:I${row}`, [[`=D${row}*G${row}`, `=D${row}*(1-G${row})`]]);
   }
+  await updateRange(`${tab}!D${revenueTotalRow}`, [[`=SUM(D5:D${revenueTotalRow - 1})`]]);
+  await updateRange(`${tab}!D${totalRow}`, [[`=SUM(D21:D${endRow})`]]);
+  await updateRange(`${tab}!H${totalRow}:I${totalRow}`, [[`=SUM(H21:H${endRow})`, `=SUM(I21:I${endRow})`]]);
   const paidIndex = markerRows.findIndex((row, index) => index > totalIndex && String(row[0] || "").trim().toUpperCase() === "PAGOU");
   const situationIndex = markerRows.findIndex((row, index) => index > totalIndex && String(row[0] || "").trim().toUpperCase() === "SITUAÇÃO");
   const paidRow = paidIndex === -1 ? totalRow + 9 : paidIndex + 1;
