@@ -132,6 +132,13 @@ Na primeira leitura ou gravação, o app cria as abas `Lancamentos` e `Metas` se
 necessário e preenche seus cabeçalhos automaticamente. Dados existentes não
 são apagados.
 
+Quando a planilha contém as abas mensais `Jan` a `Dez`, o app usa o modelo
+mensal automaticamente: receitas entram nas linhas de receitas do mês,
+despesas entram nas linhas de despesas do mês e as fórmulas de totais e divisão
+da planilha são preservadas. A aba `Resumo Anual` continua sendo calculada
+pelas fórmulas do modelo. A aba `Lancamentos`, se existir de uma configuração
+anterior, é mantida como arquivo histórico e não recebe novos lançamentos.
+
 ## Estrutura do projeto
 
 ```

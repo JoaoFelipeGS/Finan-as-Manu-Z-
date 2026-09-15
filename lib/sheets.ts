@@ -4,15 +4,12 @@ import { Entry, Goal } from "./types";
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID!;
 const LANCAMENTOS_TAB = "Lancamentos";
 const METAS_TAB = "Metas";
-
-// Cabeçalhos esperados em cada aba da planilha (linha 1).
-// LANCAMENTOS: ID | Data | Tipo | Descricao | Categoria | Pessoa | TipoDespesa | PercJoao | Valor | Excluido
-// METAS:       ID | Nome | ValorObjetivo | ValorGuardado | DataLimite | Excluido
-const LANCAMENTOS_HEADERS = ["ID", "Data", "Tipo", "Descricao", "Categoria", "Pessoa", "TipoDespesa", "PercJoao", "Valor", "Excluido"];
-const METAS_HEADERS = ["ID", "Nome", "ValorObjetivo", "ValorGuardado", "DataLimite", "Excluido"];
+const MONTH_TABS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 let cachedClient: sheets_v4.Sheets | null = null;
 let setupPromise: Promise<void> | null = null;
+let spreadsheetMode: "monthly" | "legacy" | null = null;
+let legacyArchiveAvailable = false;
 
 export function isUnsupportedSpreadsheetError(error: unknown): boolean {
   return error instanceof Error && error.message.includes("must not be an Office file");
@@ -20,21 +17,16 @@ export function isUnsupportedSpreadsheetError(error: unknown): boolean {
 
 function getClient(): sheets_v4.Sheets {
   if (cachedClient) return cachedClient;
-
   const email = process.env.GOOGLE_CLIENT_EMAIL;
   const key = process.env.GOOGLE_PRIVATE_KEY;
   if (!email || !key || !SPREADSHEET_ID) {
-    throw new Error(
-      "Variáveis de ambiente ausentes: GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY e/ou GOOGLE_SHEET_ID."
-    );
+    throw new Error("Variáveis de ambiente ausentes: GOOGLE_CLIENT_EMAIL, GOOGLE_PRIVATE_KEY e/ou GOOGLE_SHEET_ID.");
   }
-
   const auth = new google.auth.JWT({
     email,
     key: key.replace(/\\n/g, "\n"),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
-
   cachedClient = google.sheets({ version: "v4", auth });
   return cachedClient;
 }
@@ -42,159 +34,181 @@ function getClient(): sheets_v4.Sheets {
 async function ensureSpreadsheetStructure(): Promise<void> {
   if (setupPromise) return setupPromise;
   setupPromise = (async () => {
-    const client = getClient();
-    const spreadsheet = await client.spreadsheets.get({
-      spreadsheetId: SPREADSHEET_ID,
-      fields: "sheets.properties.title",
-    });
-    const existing = new Set((spreadsheet.data.sheets || []).map((sheet) => sheet.properties?.title));
-    const missing = [LANCAMENTOS_TAB, METAS_TAB].filter((title) => !existing.has(title));
-
+    const spreadsheet = await getClient().spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: "sheets.properties.title" });
+    const titles = new Set((spreadsheet.data.sheets || []).map((sheet) => sheet.properties?.title));
+    if (MONTH_TABS.some((title) => titles.has(title))) {
+      spreadsheetMode = "monthly";
+      legacyArchiveAvailable = titles.has(LANCAMENTOS_TAB);
+      return;
+    }
+    spreadsheetMode = "legacy";
+    const missing = [LANCAMENTOS_TAB, METAS_TAB].filter((title) => !titles.has(title));
     if (missing.length > 0) {
-      await client.spreadsheets.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: { requests: missing.map((title) => ({ addSheet: { properties: { title } } })) },
-      });
+      await getClient().spreadsheets.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { requests: missing.map((title) => ({ addSheet: { properties: { title } } })) } });
     }
-
-    const ranges = [
-      { range: `${LANCAMENTOS_TAB}!A1:J1`, values: [LANCAMENTOS_HEADERS] },
-      { range: `${METAS_TAB}!A1:F1`, values: [METAS_HEADERS] },
+    const headers = [
+      { range: `${LANCAMENTOS_TAB}!A1:J1`, values: [["ID", "Data", "Tipo", "Descricao", "Categoria", "Pessoa", "TipoDespesa", "PercJoao", "Valor", "Excluido"]] },
+      { range: `${METAS_TAB}!A1:F1`, values: [["ID", "Nome", "ValorObjetivo", "ValorGuardado", "DataLimite", "Excluido"]] },
     ];
-    const currentHeaders = await Promise.all(ranges.map(({ range }) => client.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range })));
-    const writes = ranges.flatMap(({ range, values }, index) => currentHeaders[index].data.values?.length ? [] : [{ range, values }]);
-    if (writes.length > 0) {
-      await client.spreadsheets.values.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: { valueInputOption: "RAW", data: writes },
-      });
-    }
-  })().catch((error) => {
-    setupPromise = null;
-    throw error;
-  });
+    const current = await Promise.all(headers.map(({ range }) => getClient().spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range })));
+    const writes = headers.filter((_, index) => !current[index].data.values?.length);
+    if (writes.length > 0) await getClient().spreadsheets.values.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { valueInputOption: "RAW", data: writes } });
+  })().catch((error) => { setupPromise = null; throw error; });
   return setupPromise;
 }
 
-// ------------------------------------------------------------------
-// Helpers genéricos
-// ------------------------------------------------------------------
-
 async function readRange(range: string): Promise<string[][]> {
   await ensureSpreadsheetStructure();
-  const client = getClient();
-  const res = await client.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range,
-  });
-  return (res.data.values as string[][]) || [];
+  const response = await getClient().spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range });
+  return (response.data.values as string[][]) || [];
 }
 
-async function appendRow(tab: string, row: (string | number)[]): Promise<void> {
-    await ensureSpreadsheetStructure();
-  const client = getClient();
-  await client.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${tab}!A:Z`,
-    valueInputOption: "USER_ENTERED",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [row] },
-  });
+function parseMoney(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const text = String(value ?? "").trim().replace(/R\$\s?/g, "").replace(/\./g, "").replace(",", ".");
+  const number = Number(text.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(number) ? number : 0;
 }
 
-/** Localiza o número da linha (1-based, considerando o cabeçalho) de um ID na coluna A de uma aba. */
-async function findRowById(tab: string, id: string): Promise<number | null> {
-  const values = await readRange(`${tab}!A2:A`);
-  const idx = values.findIndex((r) => r[0] === id);
-  return idx === -1 ? null : idx + 2; // +2: linha 1 é cabeçalho, array é 0-based
+function parsePercent(value: unknown): number | null {
+  if (value === "" || value === null || value === undefined) return null;
+  const text = String(value).trim();
+  const number = Number(text.replace("%", "").replace(",", "."));
+  if (!Number.isFinite(number)) return null;
+  return text.includes("%") || number > 1 ? number / 100 : number;
 }
 
-async function updateCell(tab: string, row: number, column: string, value: string | number): Promise<void> {
-    await ensureSpreadsheetStructure();
-  const client = getClient();
-  await client.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${tab}!${column}${row}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[value]] },
-  });
+function personFromSheet(value: unknown): Entry["pessoa"] {
+  const person = String(value).trim();
+  return person === "Pessoa 1" || person === "João" ? "João" : "Manuela";
 }
 
-// ------------------------------------------------------------------
-// Lançamentos (receitas e despesas)
-// ------------------------------------------------------------------
+function monthTabFromDate(date: string): string {
+  return MONTH_TABS[Number(date.slice(5, 7)) - 1] || "Jan";
+}
+
+function metadataId(tab: string, row: number, value: unknown): string {
+  return String(value || `${tab}:${row}`);
+}
+
+async function getMonthlyEntries(): Promise<Entry[]> {
+  const entries: Entry[] = [];
+  for (const tab of MONTH_TABS) {
+    const rows = await readRange(`${tab}!A1:K45`);
+    for (let index = 4; index <= 15; index++) {
+      const row = rows[index] || [];
+      if (!row[0] || String(row[10] || "").toUpperCase() === "TRUE") continue;
+      entries.push({ id: metadataId(tab, index + 1, row[9]), data: String(row[2] || ""), tipo: "receita", descricao: String(row[0]), categoria: null, pessoa: personFromSheet(row[1]), despesaTipo: null, percJoao: null, valor: parseMoney(row[3]) });
+    }
+    for (let index = 20; index <= 43; index++) {
+      const row = rows[index] || [];
+      if (!row[0] || String(row[10] || "").toUpperCase() === "TRUE") continue;
+      entries.push({ id: metadataId(tab, index + 1, row[9]), data: String(row[2] || ""), tipo: "despesa", descricao: String(row[0]), categoria: row[1] ? String(row[1]) : null, pessoa: personFromSheet(row[4]), despesaTipo: (row[5] as Entry["despesaTipo"]) || null, percJoao: parsePercent(row[6]), valor: parseMoney(row[3]) });
+    }
+  }
+  if (legacyArchiveAvailable) entries.push(...await getLegacyEntries());
+  return entries;
+}
+
+async function getLegacyEntries(): Promise<Entry[]> {
+  const rows = await readRange(`${LANCAMENTOS_TAB}!A2:J`);
+  return rows.filter((row) => String(row[9] || "").toUpperCase() !== "TRUE").map((row) => ({ id: row[0], data: row[1], tipo: row[2] as Entry["tipo"], descricao: row[3] || "", categoria: row[4] || null, pessoa: row[5] as Entry["pessoa"], despesaTipo: (row[6] as Entry["despesaTipo"]) || null, percJoao: row[7] !== undefined && row[7] !== "" ? Number(row[7]) : null, valor: parseMoney(row[8]) }));
+}
 
 export async function getEntries(): Promise<Entry[]> {
-  const rows = await readRange(`${LANCAMENTOS_TAB}!A2:J`);
-  return rows
-    .filter((r) => (r[9] || "").toUpperCase() !== "TRUE") // não excluídos
-    .map((r) => ({
-      id: r[0],
-      data: r[1],
-      tipo: r[2] as Entry["tipo"],
-      descricao: r[3] || "",
-      categoria: r[4] || null,
-      pessoa: r[5] as Entry["pessoa"],
-      despesaTipo: (r[6] as Entry["despesaTipo"]) || null,
-      percJoao: r[7] !== undefined && r[7] !== "" ? Number(r[7]) : null,
-      valor: Number(r[8] || 0),
-    }));
+  await ensureSpreadsheetStructure();
+  return spreadsheetMode === "monthly" ? getMonthlyEntries() : getLegacyEntries();
+}
+
+async function updateRange(range: string, values: (string | number)[][]): Promise<void> {
+  await getClient().spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID, range, valueInputOption: "USER_ENTERED", requestBody: { values } });
+}
+
+async function findMonthlyRow(tab: string, start: number, end: number, columns: number): Promise<number | null> {
+  const rows = await readRange(`${tab}!A${start}:K${end}`);
+  const row = rows.findIndex((values) => values.slice(0, columns).every((value) => !String(value || "").trim()));
+  return row === -1 ? null : start + row;
 }
 
 export async function addEntry(entry: Entry): Promise<void> {
-  await appendRow(LANCAMENTOS_TAB, [
-    entry.id,
-    entry.data,
-    entry.tipo,
-    entry.descricao,
-    entry.categoria ?? "",
-    entry.pessoa,
-    entry.despesaTipo ?? "",
-    entry.percJoao ?? "",
-    entry.valor,
-    "FALSE",
-  ]);
+  await ensureSpreadsheetStructure();
+  if (spreadsheetMode === "legacy") {
+    await updateRange(`${LANCAMENTOS_TAB}!A:Z`, [[entry.id, entry.data, entry.tipo, entry.descricao, entry.categoria ?? "", entry.pessoa, entry.despesaTipo ?? "", entry.percJoao ?? "", entry.valor, "FALSE"]]);
+    return;
+  }
+  const tab = monthTabFromDate(entry.data);
+  if (entry.tipo === "receita") {
+    const row = await findMonthlyRow(tab, 5, 16, 4);
+    if (!row) throw new Error("A aba mensal está sem linhas livres para receitas.");
+    await updateRange(`${tab}!A${row}:D${row}`, [[entry.descricao, entry.pessoa, entry.data, entry.valor]]);
+    await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
+  } else {
+    const row = await findMonthlyRow(tab, 21, 44, 6);
+    if (!row) throw new Error("A aba mensal está sem linhas livres para despesas.");
+    await updateRange(`${tab}!A${row}:G${row}`, [[entry.descricao, entry.categoria ?? "Outros", entry.data, entry.valor, entry.pessoa, entry.despesaTipo ?? "Individual", entry.percJoao ?? 0.5]]);
+    await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
+  }
+}
+
+async function updateDeletedById(id: string): Promise<void> {
+  for (const tab of MONTH_TABS) {
+    const rows = await readRange(`${tab}!J5:K44`);
+    const index = rows.findIndex((row) => row[0] === id || `${tab}:${rows.indexOf(row) + 5}` === id);
+    if (index !== -1) { await updateRange(`${tab}!K${index + 5}`, [["TRUE"]]); return; }
+  }
+  if (legacyArchiveAvailable) {
+    const rows = await readRange(`${LANCAMENTOS_TAB}!A2:A`);
+    const index = rows.findIndex((row) => row[0] === id);
+    if (index !== -1) await updateRange(`${LANCAMENTOS_TAB}!J${index + 2}`, [["TRUE"]]);
+  }
 }
 
 export async function deleteEntry(id: string): Promise<void> {
-  const row = await findRowById(LANCAMENTOS_TAB, id);
-  if (row) await updateCell(LANCAMENTOS_TAB, row, "J", "TRUE");
+  await ensureSpreadsheetStructure();
+  if (spreadsheetMode === "legacy") {
+    const rows = await readRange(`${LANCAMENTOS_TAB}!A2:A`);
+    const index = rows.findIndex((row) => row[0] === id);
+    if (index !== -1) await updateRange(`${LANCAMENTOS_TAB}!J${index + 2}`, [["TRUE"]]);
+    return;
+  }
+  await updateDeletedById(id);
 }
 
-// ------------------------------------------------------------------
-// Metas
-// ------------------------------------------------------------------
+async function getLegacyGoals(): Promise<Goal[]> {
+  const rows = await readRange(`${METAS_TAB}!A2:F`);
+  return rows.filter((row) => String(row[5] || "").toUpperCase() !== "TRUE").map((row) => ({ id: row[0], nome: row[1] || "", valorObjetivo: parseMoney(row[2]), valorGuardado: parseMoney(row[3]), dataLimite: row[4] || null }));
+}
 
 export async function getGoals(): Promise<Goal[]> {
-  const rows = await readRange(`${METAS_TAB}!A2:F`);
-  return rows
-    .filter((r) => (r[5] || "").toUpperCase() !== "TRUE")
-    .map((r) => ({
-      id: r[0],
-      nome: r[1] || "",
-      valorObjetivo: Number(r[2] || 0),
-      valorGuardado: Number(r[3] || 0),
-      dataLimite: r[4] || null,
-    }));
+  await ensureSpreadsheetStructure();
+  if (spreadsheetMode === "legacy") return getLegacyGoals();
+  const rows = await readRange(`${METAS_TAB}!A1:H18`);
+  return rows.slice(3).filter((row) => row[0] && String(row[7] || "").toUpperCase() !== "TRUE").map((row, index) => ({ id: metadataId(METAS_TAB, index + 4, row[6]), nome: String(row[0]), valorObjetivo: parseMoney(row[1]), valorGuardado: parseMoney(row[2]), dataLimite: row[3] || null }));
 }
 
 export async function addGoal(goal: Goal): Promise<void> {
-  await appendRow(METAS_TAB, [
-    goal.id,
-    goal.nome,
-    goal.valorObjetivo,
-    goal.valorGuardado,
-    goal.dataLimite ?? "",
-    "FALSE",
-  ]);
+  await ensureSpreadsheetStructure();
+  if (spreadsheetMode === "legacy") { await updateRange(`${METAS_TAB}!A:Z`, [[goal.id, goal.nome, goal.valorObjetivo, goal.valorGuardado, goal.dataLimite ?? "", "FALSE"]]); return; }
+  const rows = await readRange(`${METAS_TAB}!A4:H18`);
+  const index = rows.findIndex((row) => !String(row[0] || "").trim());
+  if (index === -1) throw new Error("A aba Metas está sem linhas livres.");
+  const row = index + 4;
+  await updateRange(`${METAS_TAB}!A${row}:D${row}`, [[goal.nome, goal.valorObjetivo, goal.valorGuardado, goal.dataLimite ?? ""]]);
+  await updateRange(`${METAS_TAB}!G${row}:H${row}`, [[goal.id, "FALSE"]]);
 }
 
 export async function updateGoalSaved(id: string, novoValorGuardado: number): Promise<void> {
-  const row = await findRowById(METAS_TAB, id);
-  if (row) await updateCell(METAS_TAB, row, "D", novoValorGuardado);
+  await ensureSpreadsheetStructure();
+  if (spreadsheetMode === "legacy") { const rows = await readRange(`${METAS_TAB}!A2:A`); const index = rows.findIndex((row) => row[0] === id); if (index !== -1) await updateRange(`${METAS_TAB}!D${index + 2}`, [[novoValorGuardado]]); return; }
+  const rows = await readRange(`${METAS_TAB}!A4:H18`);
+  const index = rows.findIndex((row, offset) => row[6] === id || `${METAS_TAB}:${offset + 4}` === id);
+  if (index !== -1) await updateRange(`${METAS_TAB}!C${index + 4}`, [[novoValorGuardado]]);
 }
 
 export async function deleteGoal(id: string): Promise<void> {
-  const row = await findRowById(METAS_TAB, id);
-  if (row) await updateCell(METAS_TAB, row, "F", "TRUE");
+  await ensureSpreadsheetStructure();
+  if (spreadsheetMode === "legacy") { const rows = await readRange(`${METAS_TAB}!A2:A`); const index = rows.findIndex((row) => row[0] === id); if (index !== -1) await updateRange(`${METAS_TAB}!F${index + 2}`, [["TRUE"]]); return; }
+  const rows = await readRange(`${METAS_TAB}!A4:H18`);
+  const index = rows.findIndex((row, offset) => row[6] === id || `${METAS_TAB}:${offset + 4}` === id);
+  if (index !== -1) await updateRange(`${METAS_TAB}!H${index + 4}`, [["TRUE"]]);
 }
