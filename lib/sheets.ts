@@ -161,6 +161,12 @@ async function insertMonthlyRow(tab: string, beforeRow: number): Promise<number>
           range: { sheetId: await getSheetId(tab), dimension: "ROWS", startIndex: beforeRow - 1, endIndex: beforeRow },
           inheritFromBefore: true,
         },
+      }, {
+        copyPaste: {
+          source: { sheetId: await getSheetId(tab), startRowIndex: beforeRow - 2, endRowIndex: beforeRow - 1 },
+          destination: { sheetId: await getSheetId(tab), startRowIndex: beforeRow - 1, endRowIndex: beforeRow },
+          pasteType: "PASTE_DATA_VALIDATION",
+        },
       }],
     },
   });
