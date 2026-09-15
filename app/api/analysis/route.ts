@@ -1,0 +1,72 @@
+import { NextRequest, NextResponse } from "next/server";
+import { FinancialSummary } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+function isSummary(value: unknown): value is FinancialSummary {
+  if (!value || typeof value !== "object") return false;
+  const summary = value as FinancialSummary;
+  return [
+    summary.receitas,
+    summary.despesas,
+    summary.saldo,
+    summary.receitaJoao,
+    summary.receitaManuela,
+    summary.despesaJoao,
+    summary.despesaManuela,
+    summary.despesasCompartilhadas,
+    summary.despesasIndividuais,
+  ].every((value) => typeof value === "number" && Number.isFinite(value))
+    && Array.isArray(summary.porCategoria)
+    && summary.porCategoria.length <= 50;
+}
+
+export async function POST(req: NextRequest) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "A análise inteligente ainda não foi configurada." }, { status: 503 });
+  }
+
+  try {
+    const body = await req.json();
+    if (!isSummary(body.summary)) {
+      return NextResponse.json({ error: "Resumo financeiro inválido." }, { status: 400 });
+    }
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.GROQ_MODEL || "llama-3.1-8b-instant",
+        temperature: 0.2,
+        max_tokens: 500,
+        messages: [
+          {
+            role: "system",
+            content: "Você é um orientador financeiro prudente. Analise somente os números fornecidos, não invente fatos, não recomende investimentos específicos ou arriscados e deixe claro que é uma estimativa. Responda em português do Brasil com 3 a 5 recomendações práticas, incluindo quanto reduzir em despesas e quanto reservar para investir, sempre em reais e sem prometer retorno.",
+          },
+          {
+            role: "user",
+            content: `Analise este resumo mensal do casal e dê dicas objetivas:\n${JSON.stringify(body.summary)}`,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      console.error("Groq API error", response.status);
+      return NextResponse.json({ error: "Não foi possível gerar a análise agora." }, { status: 502 });
+    }
+
+    const data = await response.json();
+    const analysis = data.choices?.[0]?.message?.content;
+    if (typeof analysis !== "string" || analysis.length === 0 || analysis.length > 5000) {
+      return NextResponse.json({ error: "A análise retornou um formato inválido." }, { status: 502 });
+    }
+    return NextResponse.json({ analysis });
+  } catch (error) {
+    console.error("Analysis error", error);
+    return NextResponse.json({ error: "Não foi possível gerar a análise agora." }, { status: 502 });
+  }
+}

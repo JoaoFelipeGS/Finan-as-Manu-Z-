@@ -101,6 +101,8 @@ usando o IP do computador).
    - `GOOGLE_CLIENT_EMAIL`
    - `GOOGLE_PRIVATE_KEY` (cole o valor entre aspas, mantendo os `\n`
      literais — a Vercel aceita colar o valor multi-linha direto também)
+   - `GROQ_API_KEY` (opcional, para a aba Dados gerar dicas com a Groq)
+   - `GROQ_MODEL` (opcional; padrão `llama-3.1-8b-instant`)
 4. Clique em **Deploy**. Em ~1 minuto vocês têm uma URL tipo
    `https://nosso-dinheiro.vercel.app`.
 
@@ -112,6 +114,18 @@ Abram a URL da Vercel no navegador do celular:
 
 O ícone (dourado + rosé, "JM") vai para a tela inicial e o app abre em tela
 cheia, sem barra de navegador.
+
+## 6. Aba Dados e análise
+
+A aba **Dados** consolida o mês selecionado em receitas, despesas, saldo final,
+valores por pessoa e despesas por categoria. O botão de análise envia somente
+esses totais agregados para a API Groq através do servidor; a chave nunca fica
+no navegador. Sem `GROQ_API_KEY`, o restante do app continua funcionando e a
+análise apenas fica indisponível.
+
+Na primeira leitura ou gravação, o app cria as abas `Lancamentos` e `Metas` se
+necessário e preenche seus cabeçalhos automaticamente. Dados existentes não
+são apagados.
 
 ## Estrutura do projeto
 

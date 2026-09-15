@@ -21,3 +21,16 @@ export interface Goal {
   valorGuardado: number;
   dataLimite: string | null;
 }
+
+export interface FinancialSummary {
+  receitas: number;
+  despesas: number;
+  saldo: number;
+  receitaJoao: number;
+  receitaManuela: number;
+  despesaJoao: number;
+  despesaManuela: number;
+  despesasCompartilhadas: number;
+  despesasIndividuais: number;
+  porCategoria: Array<{ categoria: string; valor: number }>;
+}

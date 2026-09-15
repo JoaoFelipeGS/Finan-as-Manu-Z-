@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Entry, Goal, Pessoa, TipoDespesa, TipoLancamento } from "@/lib/types";
+import { Entry, FinancialSummary, Goal, Pessoa, TipoDespesa, TipoLancamento } from "@/lib/types";
 
 const CATEGORIAS = [
   "Moradia", "Alimentação", "Transporte", "Saúde", "Educação",
@@ -23,12 +23,14 @@ function todayISO(): string {
 }
 
 export default function Page() {
-  const [tab, setTab] = useState<"inicio" | "add" | "metas">("inicio");
+  const [tab, setTab] = useState<"inicio" | "add" | "dados" | "metas">("inicio");
   const [entries, setEntries] = useState<Entry[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -77,21 +79,50 @@ export default function Page() {
   }, [entries, month, year]);
 
   const summary = useMemo(() => {
-    let receitas = 0, despesas = 0, pagoJoao = 0, pagoManuela = 0, deveJoao = 0, deveManuela = 0;
+    let receitas = 0, despesas = 0, pagoJoao = 0, pagoManuela = 0, receitaJoao = 0, receitaManuela = 0, despesasCompartilhadas = 0, despesasIndividuais = 0, deveJoao = 0, deveManuela = 0;
+    const categories = new Map<string, number>();
     monthEntries.forEach((e) => {
-      if (e.tipo === "receita") { receitas += e.valor; return; }
+      if (e.tipo === "receita") {
+        receitas += e.valor;
+        if (e.pessoa === "João") receitaJoao += e.valor; else receitaManuela += e.valor;
+        return;
+      }
       despesas += e.valor;
+      const category = e.categoria || "Outros";
+      categories.set(category, (categories.get(category) || 0) + e.valor);
       if (e.pessoa === "João") pagoJoao += e.valor; else pagoManuela += e.valor;
       if (e.despesaTipo === "Compartilhada") {
+        despesasCompartilhadas += e.valor;
         const pj = e.percJoao ?? 0.5;
         deveJoao += e.valor * pj;
         deveManuela += e.valor * (1 - pj);
       } else {
+        despesasIndividuais += e.valor;
         if (e.pessoa === "João") deveJoao += e.valor; else deveManuela += e.valor;
       }
     });
-    return { receitas, despesas, pagoJoao, pagoManuela, deveJoao, deveManuela, saldo: receitas - despesas };
+    return { receitas, despesas, pagoJoao, pagoManuela, despesaJoao: pagoJoao, despesaManuela: pagoManuela, receitaJoao, receitaManuela, despesasCompartilhadas, despesasIndividuais, deveJoao, deveManuela, saldo: receitas - despesas, porCategoria: [...categories.entries()].map(([categoria, valor]) => ({ categoria, valor })).sort((a, b) => b.valor - a.valor) };
   }, [monthEntries]);
+
+  async function handleAnalysis() {
+    setAnalyzing(true);
+    setAnalysis(null);
+    try {
+      const res = await fetch("/api/analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ summary: summary as FinancialSummary }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Falha na análise");
+      setAnalysis(body.analysis);
+    } catch (err) {
+      console.error(err);
+      showToast(err instanceof Error ? err.message : "Análise indisponível");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
 
   async function handleSave() {
     const v = parseFloat(valor.replace(",", "."));
@@ -377,6 +408,51 @@ export default function Page() {
         </section>
       )}
 
+      {tab === "dados" && (
+        <section>
+          <header>
+            <div className="brand">Leitura do mês</div>
+            <div className="month-row">
+              <h1>Dados</h1>
+              <span className="period-label">{MESES_PT[month]} {year}</span>
+            </div>
+          </header>
+          <div className="data-grid">
+            <div className="data-card"><span>Receitas</span><strong className="positive">{brl(summary.receitas)}</strong></div>
+            <div className="data-card"><span>Despesas</span><strong className="negative">{brl(summary.despesas)}</strong></div>
+            <div className="data-card"><span>Saldo final</span><strong>{brl(summary.saldo)}</strong></div>
+            <div className="data-card"><span>Despesas compartilhadas</span><strong>{brl(summary.despesasCompartilhadas)}</strong></div>
+          </div>
+
+          <div className="data-section">
+            <div className="section-title compact"><span>Por pessoa</span><span>receitas e despesas</span></div>
+            <div className="person-data">
+              <div><b>João</b><span className="positive">+ {brl(summary.receitaJoao)}</span><span className="negative">- {brl(summary.pagoJoao)}</span></div>
+              <div><b>Manuela</b><span className="positive">+ {brl(summary.receitaManuela)}</span><span className="negative">- {brl(summary.pagoManuela)}</span></div>
+            </div>
+          </div>
+
+          <div className="data-section">
+            <div className="section-title compact"><span>Despesas por categoria</span><span>{monthEntries.length} lançamentos</span></div>
+            <div className="category-list">
+              {summary.porCategoria.length === 0 && <div className="empty-state">Nenhuma despesa neste mês.</div>}
+              {summary.porCategoria.map((item) => (
+                <div className="category-row" key={item.categoria}><span>{item.categoria}</span><b>{brl(item.valor)}</b></div>
+              ))}
+            </div>
+          </div>
+
+          <div className="data-section insight-box">
+            <div className="section-title compact"><span>Análise inteligente</span><span>Groq</span></div>
+            <p className="muted-copy">Receba sugestões baseadas apenas nos números deste mês.</p>
+            <button className="save-btn analysis-btn" disabled={analyzing} onClick={handleAnalysis}>
+              {analyzing ? "Analisando…" : "Gerar dicas de economia"}
+            </button>
+            {analysis && <div className="analysis-result">{analysis}</div>}
+          </div>
+        </section>
+      )}
+
       {tab === "metas" && (
         <section>
           <header>
@@ -440,6 +516,12 @@ export default function Page() {
               <circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" />
             </svg>
             Metas
+          </button>
+          <button className={"tab " + (tab === "dados" ? "active" : "")} onClick={() => setTab("dados")}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 19V5M4 19h16" /><path d="M8 16v-4M12 16V8M16 16v-7" />
+            </svg>
+            Dados
           </button>
         </div>
       </nav>

@@ -8,8 +8,11 @@ const METAS_TAB = "Metas";
 // Cabeçalhos esperados em cada aba da planilha (linha 1).
 // LANCAMENTOS: ID | Data | Tipo | Descricao | Categoria | Pessoa | TipoDespesa | PercJoao | Valor | Excluido
 // METAS:       ID | Nome | ValorObjetivo | ValorGuardado | DataLimite | Excluido
+const LANCAMENTOS_HEADERS = ["ID", "Data", "Tipo", "Descricao", "Categoria", "Pessoa", "TipoDespesa", "PercJoao", "Valor", "Excluido"];
+const METAS_HEADERS = ["ID", "Nome", "ValorObjetivo", "ValorGuardado", "DataLimite", "Excluido"];
 
 let cachedClient: sheets_v4.Sheets | null = null;
+let setupPromise: Promise<void> | null = null;
 
 function getClient(): sheets_v4.Sheets {
   if (cachedClient) return cachedClient;
@@ -32,11 +35,49 @@ function getClient(): sheets_v4.Sheets {
   return cachedClient;
 }
 
+async function ensureSpreadsheetStructure(): Promise<void> {
+  if (setupPromise) return setupPromise;
+  setupPromise = (async () => {
+    const client = getClient();
+    const spreadsheet = await client.spreadsheets.get({
+      spreadsheetId: SPREADSHEET_ID,
+      fields: "sheets.properties.title",
+    });
+    const existing = new Set((spreadsheet.data.sheets || []).map((sheet) => sheet.properties?.title));
+    const missing = [LANCAMENTOS_TAB, METAS_TAB].filter((title) => !existing.has(title));
+
+    if (missing.length > 0) {
+      await client.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { requests: missing.map((title) => ({ addSheet: { properties: { title } } })) },
+      });
+    }
+
+    const ranges = [
+      { range: `${LANCAMENTOS_TAB}!A1:J1`, values: [LANCAMENTOS_HEADERS] },
+      { range: `${METAS_TAB}!A1:F1`, values: [METAS_HEADERS] },
+    ];
+    const currentHeaders = await Promise.all(ranges.map(({ range }) => client.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range })));
+    const writes = ranges.flatMap(({ range, values }, index) => currentHeaders[index].data.values?.length ? [] : [{ range, values }]);
+    if (writes.length > 0) {
+      await client.spreadsheets.values.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: { valueInputOption: "RAW", data: writes },
+      });
+    }
+  })().catch((error) => {
+    setupPromise = null;
+    throw error;
+  });
+  return setupPromise;
+}
+
 // ------------------------------------------------------------------
 // Helpers genéricos
 // ------------------------------------------------------------------
 
 async function readRange(range: string): Promise<string[][]> {
+  await ensureSpreadsheetStructure();
   const client = getClient();
   const res = await client.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -46,6 +87,7 @@ async function readRange(range: string): Promise<string[][]> {
 }
 
 async function appendRow(tab: string, row: (string | number)[]): Promise<void> {
+    await ensureSpreadsheetStructure();
   const client = getClient();
   await client.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
@@ -64,6 +106,7 @@ async function findRowById(tab: string, id: string): Promise<number | null> {
 }
 
 async function updateCell(tab: string, row: number, column: string, value: string | number): Promise<void> {
+    await ensureSpreadsheetStructure();
   const client = getClient();
   await client.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
