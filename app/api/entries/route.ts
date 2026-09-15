@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEntries, addEntry, deleteEntry } from "@/lib/sheets";
+import { getEntries, addEntry, deleteEntry, isUnsupportedSpreadsheetError } from "@/lib/sheets";
 import { Entry } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,9 @@ export async function GET() {
     return NextResponse.json(entries);
   } catch (err: any) {
     console.error(err);
+    if (isUnsupportedSpreadsheetError(err)) {
+      return NextResponse.json({ error: "A planilha precisa ser convertida para o formato Google Sheets." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Não foi possível carregar os lançamentos." }, { status: 500 });
   }
 }
@@ -56,6 +59,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(entry, { status: 201 });
   } catch (err: any) {
     console.error(err);
+    if (isUnsupportedSpreadsheetError(err)) {
+      return NextResponse.json({ error: "A planilha precisa ser convertida para o formato Google Sheets." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Não foi possível salvar o lançamento." }, { status: 500 });
   }
 }
@@ -68,6 +74,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error(err);
+    if (isUnsupportedSpreadsheetError(err)) {
+      return NextResponse.json({ error: "A planilha precisa ser convertida para o formato Google Sheets." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Não foi possível excluir o lançamento." }, { status: 500 });
   }
 }

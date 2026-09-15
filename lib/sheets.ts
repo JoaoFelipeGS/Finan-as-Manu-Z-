@@ -14,6 +14,10 @@ const METAS_HEADERS = ["ID", "Nome", "ValorObjetivo", "ValorGuardado", "DataLimi
 let cachedClient: sheets_v4.Sheets | null = null;
 let setupPromise: Promise<void> | null = null;
 
+export function isUnsupportedSpreadsheetError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("must not be an Office file");
+}
+
 function getClient(): sheets_v4.Sheets {
   if (cachedClient) return cachedClient;
 

@@ -46,6 +46,11 @@ conectada ao app.
 ## 1. Criar a planilha Google Sheets
 
 1. Crie uma planilha nova no Google Sheets.
+   O arquivo precisa ser uma planilha Google nativa. Arquivos `.xlsx` ou `.xls`
+   apenas abertos no Drive continuam sendo arquivos Office e não podem ser
+   preenchidos pela Google Sheets API. Para converter, abra o arquivo no Google
+   Sheets e use **Arquivo → Salvar como Planilhas Google**; depois use o ID da
+   nova URL, não o ID do arquivo Office.
 2. Renomeie a primeira aba para `Lancamentos` e cole este cabeçalho na
    linha 1 (coluna A até J):
    ```

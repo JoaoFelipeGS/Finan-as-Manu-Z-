@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGoals, addGoal, updateGoalSaved, deleteGoal } from "@/lib/sheets";
+import { getGoals, addGoal, updateGoalSaved, deleteGoal, isUnsupportedSpreadsheetError } from "@/lib/sheets";
 import { Goal } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,9 @@ export async function GET() {
     return NextResponse.json(goals);
   } catch (err: any) {
     console.error(err);
+    if (isUnsupportedSpreadsheetError(err)) {
+      return NextResponse.json({ error: "A planilha precisa ser convertida para o formato Google Sheets." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Não foi possível carregar as metas." }, { status: 500 });
   }
 }
@@ -41,6 +44,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(goal, { status: 201 });
   } catch (err: any) {
     console.error(err);
+    if (isUnsupportedSpreadsheetError(err)) {
+      return NextResponse.json({ error: "A planilha precisa ser convertida para o formato Google Sheets." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Não foi possível criar a meta." }, { status: 500 });
   }
 }
@@ -57,6 +63,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error(err);
+    if (isUnsupportedSpreadsheetError(err)) {
+      return NextResponse.json({ error: "A planilha precisa ser convertida para o formato Google Sheets." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Não foi possível atualizar a meta." }, { status: 500 });
   }
 }
@@ -69,6 +78,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err: any) {
     console.error(err);
+    if (isUnsupportedSpreadsheetError(err)) {
+      return NextResponse.json({ error: "A planilha precisa ser convertida para o formato Google Sheets." }, { status: 503 });
+    }
     return NextResponse.json({ error: "Não foi possível excluir a meta." }, { status: 500 });
   }
 }
