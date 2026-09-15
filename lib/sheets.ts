@@ -166,6 +166,24 @@ async function getSheetId(title: string): Promise<number> {
   return sheet.properties.sheetId;
 }
 
+async function syncMonthlyCalculations(tab: string): Promise<void> {
+  const markerRows = await readRange(`${tab}!A19:A100`);
+  const totalIndex = markerRows.findIndex((row) => String(row[0] || "").trim().toUpperCase() === "TOTAL DESPESAS");
+  const totalRow = totalIndex === -1 ? 45 : totalIndex + 19;
+  const endRow = totalRow - 1;
+  const expenseRows = await readRange(`${tab}!A21:G${endRow}`);
+  for (let index = 0; index < expenseRows.length; index++) {
+    if (!String(expenseRows[index]?.[0] || "").trim()) continue;
+    const row = index + 21;
+    await updateRange(`${tab}!H${row}:I${row}`, [[`=D${row}*G${row}`, `=D${row}*(1-G${row})`]]);
+  }
+  await updateRange(`${tab}!B55:C55`, [[
+    `=SUMIF(E21:E${endRow};"João";D21:D${endRow})`,
+    `=SUMIF(E21:E${endRow};"Manuela";D21:D${endRow})`,
+  ]]);
+  await updateRange(`${tab}!B59`, [[`=IF(B57>0;"Manuela deve "&TEXT(B57;"R$ #,##0.00")&" a João";IF(B57<0;"João deve "&TEXT(-B57;"R$ #,##0.00")&" a Manuela";"Contas quitadas entre vocês"))`]]);
+}
+
 export async function addEntry(entry: Entry): Promise<void> {
   await ensureSpreadsheetStructure();
   if (spreadsheetMode === "legacy") {
@@ -182,6 +200,7 @@ export async function addEntry(entry: Entry): Promise<void> {
     await updateRange(`${tab}!A${row}:G${row}`, [[entry.descricao, entry.categoria ?? "Outros", entry.data, entry.valor, personToSheet(entry.pessoa), entry.despesaTipo ?? "Individual", entry.percJoao ?? 0.5]]);
     await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
   }
+  await syncMonthlyCalculations(tab);
 }
 
 async function updateDeletedById(id: string): Promise<void> {
