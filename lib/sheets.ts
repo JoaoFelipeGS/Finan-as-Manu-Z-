@@ -83,6 +83,10 @@ function personFromSheet(value: unknown): Entry["pessoa"] {
   return person === "Pessoa 1" || person === "João" ? "João" : "Manuela";
 }
 
+function personToSheet(value: Entry["pessoa"]): string {
+  return value === "João" ? "Pessoa 1" : "Pessoa 2";
+}
+
 function monthTabFromDate(date: string): string {
   return MONTH_TABS[Number(date.slice(5, 7)) - 1] || "Jan";
 }
@@ -126,6 +130,7 @@ async function updateRange(range: string, values: (string | number)[][]): Promis
 
 async function findMonthlyRow(tab: string, start: number, end: number): Promise<number | null> {
   const rows = await readRange(`${tab}!A${start}:A${end}`);
+  if (rows.length === 0) return start;
   const row = rows.findIndex((values) => !String(values[0] || "").trim());
   return row === -1 ? null : start + row;
 }
@@ -161,11 +166,11 @@ export async function addEntry(entry: Entry): Promise<void> {
   const tab = monthTabFromDate(entry.data);
   if (entry.tipo === "receita") {
     const row = await findMonthlyRow(tab, 5, 16) || await insertMonthlyRow(tab, 17);
-    await updateRange(`${tab}!A${row}:D${row}`, [[entry.descricao, entry.pessoa, entry.data, entry.valor]]);
+    await updateRange(`${tab}!A${row}:D${row}`, [[entry.descricao, personToSheet(entry.pessoa), entry.data, entry.valor]]);
     await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
   } else {
     const row = await findMonthlyRow(tab, 21, 44) || await insertMonthlyRow(tab, 45);
-    await updateRange(`${tab}!A${row}:G${row}`, [[entry.descricao, entry.categoria ?? "Outros", entry.data, entry.valor, entry.pessoa, entry.despesaTipo ?? "Individual", entry.percJoao ?? 0.5]]);
+    await updateRange(`${tab}!A${row}:G${row}`, [[entry.descricao, entry.categoria ?? "Outros", entry.data, entry.valor, personToSheet(entry.pessoa), entry.despesaTipo ?? "Individual", entry.percJoao ?? 0.5]]);
     await updateRange(`${tab}!J${row}:K${row}`, [[entry.id, "FALSE"]]);
   }
 }
