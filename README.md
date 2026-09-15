@@ -148,8 +148,17 @@ armazenada: gere um hash scrypt localmente:
 node scripts/hash-password.mjs "sua senha forte"
 ```
 
-Na Vercel, configure também `AUTH_USERNAME`, `AUTH_PASSWORD_HASH` (saída do
-comando) e `AUTH_SECRET` (segredo aleatório com pelo menos 32 caracteres).
+Gere um hash diferente para cada pessoa e configure na Vercel `AUTH_USERS` com
+um JSON semelhante a este (sem espaços ou quebras problemáticas):
+
+```json
+[{"username":"joao","passwordHash":"HASH_DO_JOAO"},{"username":"manuela","passwordHash":"HASH_DA_MANUELA"}]
+```
+
+Configure também `AUTH_SECRET` com um segredo aleatório de pelo menos 32
+caracteres. `AUTH_USERNAME` e `AUTH_PASSWORD_HASH` continuam aceitos para
+compatibilidade, mas `AUTH_USERS` é a configuração recomendada para os dois
+logins.
 
 O cookie da sessão é `HttpOnly`, `Secure` em produção, `SameSite=Lax` e assinado
 com HMAC. Sem "Lembrar de mim", a sessão dura 8 horas; marcada, dura 30 dias.

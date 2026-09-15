@@ -6,14 +6,28 @@ export { SESSION_COOKIE } from "./session";
 const SESSION_TTL = 8 * 60 * 60;
 const REMEMBERED_SESSION_TTL = 30 * 24 * 60 * 60;
 
+export type AuthUser = { username: string; passwordHash: string };
+
 export function getAuthConfig() {
-  const username = process.env.AUTH_USERNAME;
-  const passwordHash = process.env.AUTH_PASSWORD_HASH;
   const secret = process.env.AUTH_SECRET;
-  if (!username || !passwordHash || !secret || secret.length < 32) {
-    throw new Error("Autenticação não configurada: AUTH_USERNAME, AUTH_PASSWORD_HASH e AUTH_SECRET são obrigatórios.");
+  let users: AuthUser[] = [];
+  if (process.env.AUTH_USERS) {
+    try {
+      const parsed = JSON.parse(process.env.AUTH_USERS) as unknown;
+      if (Array.isArray(parsed)) {
+        users = parsed.filter((user): user is AuthUser => Boolean(user && typeof user === "object" && typeof (user as AuthUser).username === "string" && typeof (user as AuthUser).passwordHash === "string"));
+      }
+    } catch {
+      throw new Error("AUTH_USERS precisa ser um JSON válido.");
+    }
   }
-  return { username, passwordHash, secret };
+  if (users.length === 0 && process.env.AUTH_USERNAME && process.env.AUTH_PASSWORD_HASH) {
+    users = [{ username: process.env.AUTH_USERNAME, passwordHash: process.env.AUTH_PASSWORD_HASH }];
+  }
+  if (users.length === 0 || !secret || secret.length < 32) {
+    throw new Error("Autenticação não configurada: AUTH_USERS e AUTH_SECRET são obrigatórios.");
+  }
+  return { users, secret };
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -44,7 +58,7 @@ export function createSession(username: string, remember: boolean): { value: str
 export function verifySession(value: string | undefined): boolean {
   if (!value) return false;
   try {
-    const { secret, username } = getAuthConfig();
+    const { secret, users } = getAuthConfig();
     const [payload, signature] = value.split(".");
     if (!payload || !signature) return false;
     const expected = sign(payload, secret);
@@ -52,7 +66,7 @@ export function verifySession(value: string | undefined): boolean {
     const expectedBuffer = Buffer.from(expected);
     if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) return false;
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return data.username === username && Number.isInteger(data.exp) && data.exp > Math.floor(Date.now() / 1000);
+    return users.some((user) => data.username === user.username) && Number.isInteger(data.exp) && data.exp > Math.floor(Date.now() / 1000);
   } catch {
     return false;
   }

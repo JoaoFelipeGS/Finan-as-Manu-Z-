@@ -10,7 +10,7 @@ function encodeBase64Url(value: ArrayBuffer): string {
 }
 
 export async function verifySessionEdge(value: string | undefined): Promise<boolean> {
-  if (!value || !process.env.AUTH_USERNAME || !process.env.AUTH_SECRET) return false;
+  if (!value || !process.env.AUTH_SECRET) return false;
   try {
     const [payload, signature] = value.split(".");
     if (!payload || !signature) return false;
@@ -19,7 +19,8 @@ export async function verifySessionEdge(value: string | undefined): Promise<bool
     const valid = await crypto.subtle.verify("HMAC", key, signatureBytes.buffer as ArrayBuffer, new TextEncoder().encode(payload));
     if (!valid) return false;
     const data = JSON.parse(new TextDecoder().decode(decodeBase64Url(payload)));
-    return data.username === process.env.AUTH_USERNAME && Number.isInteger(data.exp) && data.exp > Math.floor(Date.now() / 1000);
+    const users = process.env.AUTH_USERS ? JSON.parse(process.env.AUTH_USERS) : [{ username: process.env.AUTH_USERNAME }];
+    return Array.isArray(users) && users.some((user) => user?.username === data.username) && Number.isInteger(data.exp) && data.exp > Math.floor(Date.now() / 1000);
   } catch {
     return false;
   }

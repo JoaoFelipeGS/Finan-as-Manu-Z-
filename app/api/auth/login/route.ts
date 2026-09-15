@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
     const password = typeof body.password === "string" ? body.password : "";
     const remember = body.remember === true;
     const config = getAuthConfig();
-    const valid = username === config.username && password.length > 0 && await verifyPassword(password, config.passwordHash);
+    const user = config.users.find((candidate) => candidate.username === username);
+    const valid = user ? password.length > 0 && await verifyPassword(password, user.passwordHash) : false;
     if (!valid) return NextResponse.json({ error: "Usuário ou senha inválidos." }, { status: 401 });
 
     clearLoginRateLimit(ip);
