@@ -78,6 +78,15 @@ function parsePercent(value: unknown): number | null {
   return text.includes("%") || number > 1 ? number / 100 : number;
 }
 
+function normalizeSheetDate(value: unknown): string {
+  const text = String(value ?? "").trim();
+  const brazilian = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (brazilian) return `${brazilian[3]}-${brazilian[2].padStart(2, "0")}-${brazilian[1].padStart(2, "0")}`;
+  const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  return text;
+}
+
 function personFromSheet(value: unknown): Entry["pessoa"] {
   const person = String(value).trim();
   return person === "Pessoa 1" || person === "João" ? "João" : "Manuela";
@@ -102,12 +111,12 @@ async function getMonthlyEntries(): Promise<Entry[]> {
     for (let index = 4; index <= 15; index++) {
       const row = rows[index] || [];
       if (!row[0] || String(row[10] || "").toUpperCase() === "TRUE") continue;
-      entries.push({ id: metadataId(tab, index + 1, row[9]), data: String(row[2] || ""), tipo: "receita", descricao: String(row[0]), categoria: null, pessoa: personFromSheet(row[1]), despesaTipo: null, percJoao: null, valor: parseMoney(row[3]) });
+      entries.push({ id: metadataId(tab, index + 1, row[9]), data: normalizeSheetDate(row[2]), tipo: "receita", descricao: String(row[0]), categoria: null, pessoa: personFromSheet(row[1]), despesaTipo: null, percJoao: null, valor: parseMoney(row[3]) });
     }
     for (let index = 20; index <= 43; index++) {
       const row = rows[index] || [];
       if (!row[0] || String(row[10] || "").toUpperCase() === "TRUE") continue;
-      entries.push({ id: metadataId(tab, index + 1, row[9]), data: String(row[2] || ""), tipo: "despesa", descricao: String(row[0]), categoria: row[1] ? String(row[1]) : null, pessoa: personFromSheet(row[4]), despesaTipo: (row[5] as Entry["despesaTipo"]) || null, percJoao: parsePercent(row[6]), valor: parseMoney(row[3]) });
+      entries.push({ id: metadataId(tab, index + 1, row[9]), data: normalizeSheetDate(row[2]), tipo: "despesa", descricao: String(row[0]), categoria: row[1] ? String(row[1]) : null, pessoa: personFromSheet(row[4]), despesaTipo: (row[5] as Entry["despesaTipo"]) || null, percJoao: parsePercent(row[6]), valor: parseMoney(row[3]) });
     }
   }
   if (legacyArchiveAvailable) entries.push(...await getLegacyEntries());
