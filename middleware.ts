@@ -7,4 +7,4 @@ export async function middleware(request: NextRequest) {
   return NextResponse.redirect(new URL("/login", request.url));
 }
 
-export const config = { matcher: ["/((?!login|api/auth|_next/static|_next/image|favicon.ico|manifest.json|icon-.*\\.png).*)"] };
+export const config = { matcher: ["/((?!login|api/auth|_next/static|_next/image|favicon.ico|manifest.json|logo\\.jpg|icon-.*\\.png).*)"] };
