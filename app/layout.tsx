@@ -11,8 +11,8 @@ export const metadata: Metadata = {
     title: "Nosso Dinheiro",
   },
   icons: {
-    icon: "/icon-192.png",
-    apple: "/icon-192.png",
+    icon: "/logo.jpg",
+    apple: "/logo.jpg",
   },
 };
 

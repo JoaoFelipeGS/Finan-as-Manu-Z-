@@ -31,7 +31,10 @@ export default function LoginPage() {
   return (
     <main className="auth-page">
       <div className="auth-card">
-        <div className="brand">Nosso Dinheiro · João &amp; Manuela</div>
+        <div className="brand">
+          <img src="/logo.jpg" alt="Nosso Dinheiro" className="brand-logo" />
+          <span>Nosso Dinheiro · João &amp; Manuela</span>
+        </div>
         <h1>Entrar</h1>
         <p className="auth-subtitle">Acesse o controle financeiro de vocês.</p>
         <form onSubmit={submit} className="auth-form">

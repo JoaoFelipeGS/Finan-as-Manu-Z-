@@ -277,7 +277,10 @@ export default function Page() {
       {tab === "inicio" && (
         <section>
           <header>
-            <div className="brand">Nosso Dinheiro · João &amp; Manuela</div>
+            <div className="brand">
+              <img src="/logo.jpg" alt="Nosso Dinheiro" className="brand-logo" />
+              <span>Nosso Dinheiro · João &amp; Manuela</span>
+            </div>
             <div className="month-row">
               <h1>{MESES_PT[month]} {year}</h1>
               <div className="month-nav">
